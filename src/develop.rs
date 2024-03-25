@@ -57,6 +57,9 @@ pub struct DevelopOptions {
     /// `cargo rustc` options
     #[command(flatten)]
     pub cargo_options: CargoOptions,
+    #[arg(long)]
+    /// Use `uv` as backend rather than `pip`
+    pub uv: bool,
 }
 
 fn make_pip_command(python_path: &Path, pip_path: Option<&Path>) -> Command {
@@ -76,11 +79,32 @@ fn make_pip_command(python_path: &Path, pip_path: Option<&Path>) -> Command {
     }
 }
 
+fn make_uv_pip_command() -> Command {
+    let mut cmd = Command::new("uv");
+    cmd.arg("pip");
+    cmd
+    // match pip_path {
+    //     Some(pip_path) => {
+    //         let mut cmd = Command::new(pip_path);
+    //         cmd.arg("--python")
+    //             .arg(python_path)
+    //             .arg("--disable-pip-version-check");
+    //         cmd
+    //     }
+    //     None => {
+    //         let mut cmd = Command::new(python_path);
+    //         cmd.arg("-m").arg("pip").arg("--disable-pip-version-check");
+    //         cmd
+    //     }
+    // }
+}
+
 fn install_dependencies(
     build_context: &BuildContext,
     extras: &[String],
     interpreter: &PythonInterpreter,
     pip_path: Option<&Path>,
+    backend_tool: &str,
 ) -> Result<()> {
     if !build_context.metadata23.requires_dist.is_empty() {
         let mut args = vec!["install".to_string()];
@@ -110,12 +134,18 @@ fn install_dependencies(
             }
             pkg.to_string()
         }));
-        let status = make_pip_command(&interpreter.executable, pip_path)
+        let mut cmd = if backend_tool.contains("uv") {
+            make_uv_pip_command()
+        } else {
+            make_pip_command(&interpreter.executable, pip_path)
+        };
+
+        let status = cmd
             .args(&args)
             .status()
-            .context("Failed to run pip install")?;
+            .context(format!("Failed to run {backend_tool} install"))?;
         if !status.success() {
-            bail!(r#"pip install finished with "{}""#, status)
+            bail!(r#"{} install finished with "{}""#, backend_tool, status)
         }
     }
     Ok(())
@@ -127,20 +157,28 @@ fn pip_install_wheel(
     venv_dir: &Path,
     pip_path: Option<&Path>,
     wheel_filename: &Path,
+    backend_tool: &str,
 ) -> Result<()> {
-    let mut pip_cmd = make_pip_command(python, pip_path);
+    // let mut pip_cmd = make_pip_command(python, pip_path);
+    let mut pip_cmd = if backend_tool.contains("uv") {
+        make_uv_pip_command()
+    } else {
+        make_pip_command(python, pip_path)
+    };
     let output = pip_cmd
         .args(["install", "--no-deps", "--force-reinstall"])
         .arg(dunce::simplified(wheel_filename))
         .output()
         .context(format!(
-            "pip install failed (ran {:?} with {:?})",
+            "{} install failed (ran {:?} with {:?})",
+            backend_tool,
             pip_cmd.get_program(),
             &pip_cmd.get_args().collect::<Vec<_>>(),
         ))?;
     if !output.status.success() {
         bail!(
-            "pip install in {} failed running {:?}: {}\n--- Stdout:\n{}\n--- Stderr:\n{}\n---\n",
+            "{} install in {} failed running {:?}: {}\n--- Stdout:\n{}\n--- Stderr:\n{}\n---\n",
+            backend_tool,
             venv_dir.display(),
             &pip_cmd.get_args().collect::<Vec<_>>(),
             output.status,
@@ -148,14 +186,23 @@ fn pip_install_wheel(
             String::from_utf8_lossy(&output.stderr).trim(),
         );
     }
-    if !output.stderr.is_empty() {
+    // Looks like `uv pip` prints stdout to stderr?
+    if backend_tool.contains("uv") && output.stderr.is_empty() {
+        eprintln!(
+            "⚠️ Warning: uv pip raised a warning running {:?}:\n{}",
+            &pip_cmd.get_args().collect::<Vec<_>>(),
+            String::from_utf8_lossy(&output.stderr).trim(),
+        );
+    }
+    if !backend_tool.contains("uv") && !output.stderr.is_empty() {
         eprintln!(
             "⚠️ Warning: pip raised a warning running {:?}:\n{}",
             &pip_cmd.get_args().collect::<Vec<_>>(),
             String::from_utf8_lossy(&output.stderr).trim(),
         );
     }
-    fix_direct_url(build_context, python, pip_path)?;
+
+    fix_direct_url(build_context, python, pip_path, backend_tool)?;
     Ok(())
 }
 
@@ -170,15 +217,21 @@ fn fix_direct_url(
     build_context: &BuildContext,
     python: &Path,
     pip_path: Option<&Path>,
+    backend_tool: &str,
 ) -> Result<()> {
     println!("✏️  Setting installed package as editable");
-    let mut pip_cmd = make_pip_command(python, pip_path);
+    let mut pip_cmd = if backend_tool.contains("uv") {
+        make_uv_pip_command()
+    } else {
+        make_pip_command(python, pip_path)
+    };
     let output = pip_cmd
         .args(["show", "--files"])
         .arg(&build_context.metadata23.name)
         .output()
         .context(format!(
-            "pip show failed (ran {:?} with {:?})",
+            "{} show failed (ran {:?} with {:?})",
+            backend_tool,
             pip_cmd.get_program(),
             &pip_cmd.get_args().collect::<Vec<_>>(),
         ))?;
@@ -227,7 +280,9 @@ pub fn develop(develop_options: DevelopOptions, venv_dir: &Path) -> Result<()> {
         skip_install,
         pip_path,
         cargo_options,
+        uv,
     } = develop_options;
+    let backend_tool = if uv { "uv pip" } else { "pip" };
     let mut target_triple = cargo_options.target.as_ref().map(|x| x.to_string());
     let target = Target::from_target_triple(cargo_options.target)?;
     let python = target.get_venv_python(venv_dir);
@@ -278,7 +333,13 @@ pub fn develop(develop_options: DevelopOptions, venv_dir: &Path) -> Result<()> {
             || anyhow!("Expected `python` to be a python interpreter inside a virtualenv ಠ_ಠ"),
         )?;
 
-    install_dependencies(&build_context, &extras, &interpreter, pip_path.as_deref())?;
+    install_dependencies(
+        &build_context,
+        &extras,
+        &interpreter,
+        pip_path.as_deref(),
+        backend_tool,
+    )?;
 
     let wheels = build_context.build_wheels()?;
     if !skip_install {
@@ -289,6 +350,7 @@ pub fn develop(develop_options: DevelopOptions, venv_dir: &Path) -> Result<()> {
                 venv_dir,
                 pip_path.as_deref(),
                 filename,
+                backend_tool,
             )?;
             eprintln!(
                 "🛠 Installed {}-{}",
