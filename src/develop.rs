@@ -186,22 +186,14 @@ fn pip_install_wheel(
             String::from_utf8_lossy(&output.stderr).trim(),
         );
     }
-    // Looks like `uv pip` prints stdout to stderr?
-    if backend_tool.contains("uv") && output.stderr.is_empty() {
-        eprintln!(
-            "⚠️ Warning: uv pip raised a warning running {:?}:\n{}",
-            &pip_cmd.get_args().collect::<Vec<_>>(),
-            String::from_utf8_lossy(&output.stderr).trim(),
-        );
-    }
-    if !backend_tool.contains("uv") && !output.stderr.is_empty() {
+    // `uv` logs to stderr
+    if !output.stderr.is_empty() && !backend_tool.contains("uv") {
         eprintln!(
             "⚠️ Warning: pip raised a warning running {:?}:\n{}",
             &pip_cmd.get_args().collect::<Vec<_>>(),
             String::from_utf8_lossy(&output.stderr).trim(),
         );
     }
-
     fix_direct_url(build_context, python, pip_path, backend_tool)?;
     Ok(())
 }

@@ -12,7 +12,9 @@ pub fn test_develop(
     bindings: Option<String>,
     unique_name: &str,
     conda: bool,
+    uv: bool,
 ) -> Result<()> {
+    let backend = if uv { "uv" } else { "uv pip" };
     maybe_mock_cargo();
 
     let package = package.as_ref();
@@ -25,10 +27,11 @@ pub fn test_develop(
     // Ensure the test doesn't wrongly pass
     check_installed(package, &python).unwrap_err();
 
+    let cmd = if uv { "uv" } else { &python };
     let output = Command::new(&python)
         .args([
             "-m",
-            "pip",
+            backend,
             "install",
             "--disable-pip-version-check",
             "cffi",
@@ -57,6 +60,7 @@ pub fn test_develop(
             target_dir: Some(PathBuf::from(format!("test-crates/targets/{unique_name}"))),
             ..Default::default()
         },
+        uv,
     };
     develop(develop_options, &venv_dir)?;
 
