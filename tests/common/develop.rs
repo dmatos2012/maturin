@@ -27,14 +27,12 @@ pub fn test_develop(
     // Ensure the test doesn't wrongly pass
     check_installed(package, &python).unwrap_err();
 
-    let cmd = if uv { "uv" } else { &python };
-    let output = Command::new(&python)
+    // let cmd = if uv { "uv" } else { &python };
+    // let output = Command::new(&python)
+    let output = Command::new("uv")
         .args([
-            "-m",
-            backend,
-            "install",
-            "--disable-pip-version-check",
-            "cffi",
+            // "-m",
+            "pip", "install", "cffi",
         ])
         .output()?;
     if !output.status.success() {

@@ -204,11 +204,11 @@ fn develop_pyo3_ffi_pure() {
     ));
 }
 #[test]
-fn develop_with_uv_backend() {
+fn develop_hello_world_with_uv_backend() {
     handle_result(develop::test_develop(
-        "test-crates/with-uv-backend",
+        "test-crates/hello-world",
         None,
-        "develop-with-uv-backend",
+        "develop-hello-world-other",
         false,
         true,
     ));

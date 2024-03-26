@@ -194,7 +194,8 @@ fn pip_install_wheel(
             String::from_utf8_lossy(&output.stderr).trim(),
         );
     }
-    fix_direct_url(build_context, python, pip_path, backend_tool)?;
+    // fix this fucntion to check for fn success?
+    fix_direct_url(build_context, python, pip_path)?;
     Ok(())
 }
 
@@ -209,21 +210,15 @@ fn fix_direct_url(
     build_context: &BuildContext,
     python: &Path,
     pip_path: Option<&Path>,
-    backend_tool: &str,
 ) -> Result<()> {
     println!("✏️  Setting installed package as editable");
-    let mut pip_cmd = if backend_tool.contains("uv") {
-        make_uv_pip_command()
-    } else {
-        make_pip_command(python, pip_path)
-    };
+    let mut pip_cmd = make_pip_command(python, pip_path);
     let output = pip_cmd
         .args(["show", "--files"])
         .arg(&build_context.metadata23.name)
         .output()
         .context(format!(
-            "{} show failed (ran {:?} with {:?})",
-            backend_tool,
+            "pip show failed (ran {:?} with {:?})",
             pip_cmd.get_program(),
             &pip_cmd.get_args().collect::<Vec<_>>(),
         ))?;
