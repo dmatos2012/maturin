@@ -31,6 +31,7 @@ pub fn test_develop(
             "pip",
             "install",
             "--disable-pip-version-check",
+            "uv",
             "cffi",
         ])
         .output()?;

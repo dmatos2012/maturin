@@ -36,6 +36,7 @@ pub fn check_installed(package: &Path, python: &Path) -> Result<()> {
         .env("PATH", path)
         .output()
         .unwrap();
+    dbg!(&output);
     if !output.status.success() {
         bail!(
             "Check install fail: {} \n--- Stdout:\n{}\n--- Stderr:\n{}",

@@ -70,6 +70,25 @@ fn make_pip_command(python_path: &Path, pip_path: Option<&Path>) -> Command {
         }
         None => {
             let mut cmd = Command::new(python_path);
+            // let mut cmd = Command::new("uv");
+            // cmd.arg("-m").arg("pip").arg("--disable-pip-version-check");
+            cmd.arg("-m").arg("uv").arg("pip");
+            // cmd.arg("pip");
+            cmd
+        }
+    }
+}
+fn make_pip_always_command(python_path: &Path, pip_path: Option<&Path>) -> Command {
+    match pip_path {
+        Some(pip_path) => {
+            let mut cmd = Command::new(pip_path);
+            cmd.arg("--python")
+                .arg(python_path)
+                .arg("--disable-pip-version-check");
+            cmd
+        }
+        None => {
+            let mut cmd = Command::new(python_path);
             cmd.arg("-m").arg("pip").arg("--disable-pip-version-check");
             cmd
         }
@@ -114,6 +133,7 @@ fn install_dependencies(
             .args(&args)
             .status()
             .context("Failed to run pip install")?;
+        dbg!(&status);
         if !status.success() {
             bail!(r#"pip install finished with "{}""#, status)
         }
@@ -127,8 +147,17 @@ fn pip_install_wheel(
     venv_dir: &Path,
     pip_path: Option<&Path>,
     wheel_filename: &Path,
+    site_packages_dir: &PathBuf,
 ) -> Result<()> {
+    // print metadata name and version
+    // print location
     let mut pip_cmd = make_pip_command(python, pip_path);
+    let dist_info = format!(
+        "{}-{}.dist-info",
+        build_context.metadata23.get_distribution_escaped(),
+        build_context.metadata23.version
+    );
+    let direct_url = site_packages_dir.join(&dist_info).join("direct_url.json");
     let output = pip_cmd
         .args(["install", "--no-deps", "--force-reinstall"])
         .arg(dunce::simplified(wheel_filename))
@@ -138,6 +167,35 @@ fn pip_install_wheel(
             pip_cmd.get_program(),
             &pip_cmd.get_args().collect::<Vec<_>>(),
         ))?;
+    // dbg!(String::from_utf8_lossy(&output.stderr).trim());
+    // get venv site packages
+
+    // let mut pip_cmd = make_pip_command(python, pip_path);
+    // apparently pip doesnt show hello-world but
+    // uv pip does show hello world on `uv pip list`
+    // for fix direct url perhaps do
+    // location.join  package.name-version.dist-info/direct_url.json
+    // let mut pip_cmd = make_pip_always_command(python, pip_path);
+    // let output = pip_cmd.args(["list"]).output().context(format!(
+    //     "pip install failed (ran {:?} with {:?})",
+    //     pip_cmd.get_program(),
+    //     &pip_cmd.get_args().collect::<Vec<_>>(),
+    // ))?;
+    // dbg!(String::from_utf8_lossy(&output.stdout).trim());
+    //
+    // let mut pip_cmd = make_pip_always_command(python, pip_path);
+    // let output = pip_cmd
+    //     .args(["show", "--files"])
+    //     // .args(["list"])
+    //     // .arg(&build_context.metadata23.name)
+    //     .arg("hello-world")
+    //     .output()
+    //     .context(format!(
+    //         "pip show failed (ran {:?} with {:?})",
+    //         pip_cmd.get_program(),
+    //         &pip_cmd.get_args().collect::<Vec<_>>(),
+    //     ))?;
+    // dbg!(&output);
     if !output.status.success() {
         bail!(
             "pip install in {} failed running {:?}: {}\n--- Stdout:\n{}\n--- Stderr:\n{}\n---\n",
@@ -148,14 +206,33 @@ fn pip_install_wheel(
             String::from_utf8_lossy(&output.stderr).trim(),
         );
     }
-    if !output.stderr.is_empty() {
-        eprintln!(
-            "⚠️ Warning: pip raised a warning running {:?}:\n{}",
-            &pip_cmd.get_args().collect::<Vec<_>>(),
-            String::from_utf8_lossy(&output.stderr).trim(),
-        );
-    }
-    fix_direct_url(build_context, python, pip_path)?;
+    // if !output.stderr.is_empty() {
+    //     eprintln!(
+    //         "⚠️ Warning: pip raised a warning running {:?}:\n{}",
+    //         &pip_cmd.get_args().collect::<Vec<_>>(),
+    //         String::from_utf8_lossy(&output.stderr).trim(),
+    //     );
+    // }
+    // fix_direct_url(build_context, python, pip_path)?;
+    fix_direct_url2(build_context, python, pip_path, direct_url)?;
+    Ok(())
+}
+
+fn fix_direct_url2(
+    build_context: &BuildContext,
+    python: &Path,
+    pip_path: Option<&Path>,
+    direct_url: PathBuf,
+) -> Result<()> {
+    println!("✏️  Setting installed package as editable");
+    let project_dir = build_context
+        .pyproject_toml_path
+        .parent()
+        .ok_or_else(|| anyhow!("failed to get project directory"))?;
+    let uri = Url::from_file_path(project_dir)
+        .map_err(|_| anyhow!("failed to convert project directory to file URL"))?;
+    let content = format!("{{\"dir_info\": {{\"editable\": true}}, \"url\": \"{uri}\"}}");
+    fs::write(direct_url, content)?;
     Ok(())
 }
 
@@ -172,9 +249,11 @@ fn fix_direct_url(
     pip_path: Option<&Path>,
 ) -> Result<()> {
     println!("✏️  Setting installed package as editable");
-    let mut pip_cmd = make_pip_command(python, pip_path);
+    // let mut pip_cmd = make_pip_command(python, pip_path);
+    let mut pip_cmd = make_pip_always_command(python, pip_path);
     let output = pip_cmd
         .args(["show", "--files"])
+        // .args(["list"])
         .arg(&build_context.metadata23.name)
         .output()
         .context(format!(
@@ -278,6 +357,7 @@ pub fn develop(develop_options: DevelopOptions, venv_dir: &Path) -> Result<()> {
             || anyhow!("Expected `python` to be a python interpreter inside a virtualenv ಠ_ಠ"),
         )?;
 
+    let site_packages_dir = interpreter.get_venv_site_package(venv_dir, &target);
     install_dependencies(&build_context, &extras, &interpreter, pip_path.as_deref())?;
 
     let wheels = build_context.build_wheels()?;
@@ -289,6 +369,7 @@ pub fn develop(develop_options: DevelopOptions, venv_dir: &Path) -> Result<()> {
                 venv_dir,
                 pip_path.as_deref(),
                 filename,
+                &site_packages_dir,
             )?;
             eprintln!(
                 "🛠 Installed {}-{}",
