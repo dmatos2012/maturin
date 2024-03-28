@@ -31,6 +31,7 @@ pub fn check_installed(package: &Path, python: &Path) -> Result<()> {
             .join("check_installed")
             .join("check_installed.py");
     }
+    dbg!(&path);
     let output = Command::new(python)
         .arg(check_installed)
         .env("PATH", path)

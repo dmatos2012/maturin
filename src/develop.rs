@@ -107,6 +107,7 @@ fn install_dependencies(
     backend_tool: &str,
 ) -> Result<()> {
     if !build_context.metadata23.requires_dist.is_empty() {
+        println!("this one requires dist ");
         let mut args = vec!["install".to_string()];
         args.extend(build_context.metadata23.requires_dist.iter().map(|x| {
             let mut pkg = x.clone();
@@ -135,6 +136,7 @@ fn install_dependencies(
             pkg.to_string()
         }));
         let mut cmd = if backend_tool.contains("uv") {
+            println!("Installing_dependencies with uv pip");
             make_uv_pip_command()
         } else {
             make_pip_command(&interpreter.executable, pip_path)
@@ -167,7 +169,12 @@ fn pip_install_wheel(
     };
     let output = pip_cmd
         .args(["install", "--no-deps", "--force-reinstall"])
-        .arg(dunce::simplified(wheel_filename))
+        .arg(format!(
+            "{}@{}",
+            build_context.metadata23.name.clone(),
+            dunce::simplified(wheel_filename).display()
+        ))
+        // .arg(dunce::simplified(wheel_filename))
         .output()
         .context(format!(
             "{} install failed (ran {:?} with {:?})",
@@ -175,6 +182,8 @@ fn pip_install_wheel(
             pip_cmd.get_program(),
             &pip_cmd.get_args().collect::<Vec<_>>(),
         ))?;
+    dbg!(pip_cmd.get_program());
+    dbg!(pip_cmd.get_args().collect::<Vec<_>>(),);
     if !output.status.success() {
         bail!(
             "{} install in {} failed running {:?}: {}\n--- Stdout:\n{}\n--- Stderr:\n{}\n---\n",
@@ -224,6 +233,7 @@ fn fix_direct_url(
         ))?;
     if let Some(direct_url_path) = parse_direct_url_path(&String::from_utf8_lossy(&output.stdout))?
     {
+        dbg!("fixing direct url");
         let project_dir = build_context
             .pyproject_toml_path
             .parent()

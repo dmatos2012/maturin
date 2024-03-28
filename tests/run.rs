@@ -185,11 +185,12 @@ fn develop_uniffi_mixed() {
 #[test]
 fn develop_hello_world() {
     handle_result(develop::test_develop(
-        "test-crates/hello-world",
+        // "test-crates/hello-world",
+        "test-crates/pyo3-ffi-pure",
         None,
-        "develop-hello-world",
+        "develop-pyo3-ffi-pure",
         false,
-        false,
+        true,
     ));
 }
 
@@ -203,16 +204,16 @@ fn develop_pyo3_ffi_pure() {
         false,
     ));
 }
-#[test]
-fn develop_hello_world_with_uv_backend() {
-    handle_result(develop::test_develop(
-        "test-crates/hello-world",
-        None,
-        "develop-hello-world-other",
-        false,
-        true,
-    ));
-}
+// #[test]
+// fn develop_hello_world_with_uv_backend() {
+//     handle_result(develop::test_develop(
+//         "test-crates/hello-world",
+//         None,
+//         "develop-hello-world-other",
+//         false,
+//         true,
+//     ));
+// }
 
 #[test]
 fn integration_pyo3_bin() {

@@ -14,7 +14,6 @@ pub fn test_develop(
     conda: bool,
     uv: bool,
 ) -> Result<()> {
-    let backend = if uv { "uv" } else { "uv pip" };
     maybe_mock_cargo();
 
     let package = package.as_ref();
@@ -28,12 +27,15 @@ pub fn test_develop(
     check_installed(package, &python).unwrap_err();
 
     // let cmd = if uv { "uv" } else { &python };
-    // let output = Command::new(&python)
-    let output = Command::new("uv")
-        .args([
-            // "-m",
-            "pip", "install", "cffi",
-        ])
+    // install `uv within python`
+    Command::new(&python)
+        .args(["-m", "pip", "install", "uv"])
+        .output()?;
+    dbg!("Installed uv");
+    let output = Command::new(&python)
+        // let output = Command::new("uv")
+        .args(["-m", "pip", "install", "cffi"])
+        // .args(["-m", "uv", "pip", "install", "cffi"])
         .output()?;
     if !output.status.success() {
         panic!(
